@@ -1,5 +1,6 @@
-mod functional;
-use crate::functional::Activation;
+use crate::nn::neuron::Neuron;
+use crate::functional::activation::Activation;
+use rand::seq::SliceRandom;
 
 pub struct Linear {
     pub neurons: Vec<Neuron>,
@@ -18,7 +19,7 @@ impl Linear {
                    let neurons = (0..num_neurons)
                    .map(|_| Neuron::new(num_inputs, activation))
                    .collect();
-                   Layer {
+                   Linear {
                        neurons,
                        dropout_rate,
                        mask: None,
@@ -40,13 +41,16 @@ impl Linear {
                    // Dropout
                    if training && self.dropout_rate > 0.0 {
                        let mut rng = rand::thread_rng();
-                       self.mask = Some((0..outputs.len()).map(|_| {
-                           if rng.gen::<f64>() >= self.dropout_rate { 1 } else { 0 }
-                       }).collect());
+                       let active: Vec<usize> = (0..outputs.len())
+                       .filter(|_| rng.gen::<f64>() >= self.dropout_rate)
+                       .collect();
+                       self.mask = Some(active.clone());
                        let scale = 1.0 / (1.0 - self.dropout_rate);
-                       for (i, m) in self.mask.as_ref().unwrap().iter().enumerate() {
-                           outputs[i] *= (*m as f64) * scale;
+                       let mut new_out = vec![0.0; outputs.len()];
+                       for &idx in &active {
+                           new_out[idx] = outputs[idx] * scale;
                        }
+                       outputs = new_out;
                    } else {
                        self.mask = None;
                    }
@@ -56,18 +60,17 @@ impl Linear {
                        let keep = ((self.neurons.len() as f64 * (1.0 - self.sampling_rate)).round() as usize).max(1);
                        let mut indices: Vec<usize> = (0..self.neurons.len()).collect();
                        let mut rng = rand::thread_rng();
-                       use rand::seq::SliceRandom;
                        indices.shuffle(&mut rng);
                        indices.truncate(keep);
                        self.sampling_mask = Some(indices.clone());
-                       let scale = if self.sampling_rate < 1.0 && self.sampling_scale {
+                       let scale = if self.sampling_scale && self.sampling_rate < 1.0 {
                            1.0 / (1.0 - self.sampling_rate)
                        } else { 1.0 };
-                       let mut new_outputs = vec![0.0; outputs.len()];
+                       let mut new_out = vec![0.0; outputs.len()];
                        for &idx in &indices {
-                           new_outputs[idx] = outputs[idx] * scale;
+                           new_out[idx] = outputs[idx] * scale;
                        }
-                       outputs = new_outputs;
+                       outputs = new_out;
                    } else {
                        self.sampling_mask = None;
                    }
@@ -77,8 +80,9 @@ impl Linear {
 
                pub fn backward(&mut self, d_outputs: &mut [f64], is_last_layer: bool) -> (Vec<f64>, Vec<(Vec<f64>, f64)>) {
                    if self.training_mode {
+                       // undo sampling
                        if let Some(mask) = &self.sampling_mask {
-                           let scale = if self.sampling_rate < 1.0 && self.sampling_scale {
+                           let scale = if self.sampling_scale && self.sampling_rate < 1.0 {
                                1.0 / (1.0 - self.sampling_rate)
                            } else { 1.0 };
                            for i in 0..d_outputs.len() {
@@ -89,10 +93,11 @@ impl Linear {
                                }
                            }
                        }
+                       // undo dropout
                        if let Some(mask) = &self.mask {
                            let scale = 1.0 / (1.0 - self.dropout_rate);
                            for i in 0..d_outputs.len() {
-                               d_outputs[i] *= mask[i] as f64 * scale;
+                               d_outputs[i] *= if mask.contains(&i) { scale } else { 0.0 };
                            }
                        }
                    }
