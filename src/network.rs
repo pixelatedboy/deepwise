@@ -1,7 +1,8 @@
 use crate::nn::linear::Linear;
-use crate::optimizer::{Optimizer, SGD, Adam};
+use crate::optimizer::{Optimizer, SGD};
 use crate::functional::activation::Activation;
 use rand::seq::SliceRandom;
+use rand::rng;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Task {
@@ -32,14 +33,15 @@ impl Network {
                    Self { layers, task }
                }
 
-               fn softmax(logits: &[f64]) -> Vec<f64> {
+
+               pub fn softmax(logits: &[f64]) -> Vec<f64> {
                    let max = logits.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                    let exp: Vec<f64> = logits.iter().map(|&x| (x - max).exp()).collect();
                    let sum: f64 = exp.iter().sum();
                    exp.iter().map(|&e| e / sum).collect()
                }
 
-               fn sigmoid(x: f64) -> f64 {
+               pub fn sigmoid(x: f64) -> f64 {
                    if x >= 0.0 { 1.0 / (1.0 + (-x).exp()) } else { x.exp() / (1.0 + x.exp()) }
                }
 
@@ -75,11 +77,11 @@ impl Network {
                ) {
                    let mut optimizer: Box<dyn Optimizer> = match optimizer_type {
                        "sgd" => Box::new(SGD::new(learning_rate)),
-                       "adam" => Box::new(Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
+                       // "adam" => Box::new(Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
                        _ => panic!("Unsupported optimizer"),
                    };
                    let n_samples = X.len();
-                   let mut rng = rand::thread_rng();
+                   let mut rng = rng();
 
                    for epoch in 0..epochs {
                        let mut total_loss = 0.0;
@@ -106,7 +108,6 @@ impl Network {
                                let inputs = &X[idx];
                                let target = y[idx];
 
-                               // Forward
                                let outputs = self.forward(inputs, true);
 
                                let (loss, d_output) = match self.task {
@@ -137,12 +138,13 @@ impl Network {
                                };
                                batch_loss += loss;
 
-                               // Backward
                                let mut d_current = d_output;
                                let mut layer_idx = self.layers.len();
+                               let num_layers = layer_idx;
+
                                for layer in self.layers.iter_mut().rev() {
                                    layer_idx -= 1;
-                                   let (d_in, grads) = layer.backward(&mut d_current, layer_idx == self.layers.len() - 1);
+                                   let (d_in, grads) = layer.backward(&mut d_current, layer_idx == num_layers - 1);
                                    for (neuron_idx, (grad_w, grad_b)) in grads.into_iter().enumerate() {
                                        let (acc_w, acc_b) = &mut accum_grads[layer_idx][neuron_idx];
                                        for i in 0..acc_w.len() {

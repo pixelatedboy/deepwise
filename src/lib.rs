@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-use std::sync::Arc;
+use pyo3::types::PyAny;
 
 mod functional;
 mod nn;
@@ -10,6 +9,7 @@ mod network;
 
 use functional::activation::Activation;
 use network::{Network, Task};
+use rand::seq::SliceRandom;
 
 #[pyclass(name = "Network", subclass)]
 pub struct PyNetwork {
@@ -20,7 +20,7 @@ pub struct PyNetwork {
 impl PyNetwork {
     #[new]
     pub fn new() -> Self {
-        Self {
+        PyNetwork {
             inner: Network {
                 layers: Vec::new(),
                 task: Task::Regression,
@@ -38,12 +38,12 @@ impl PyNetwork {
         Ok(())
     }
 
-    pub fn set_layers(&mut self, layers: Vec<PyObject>) -> PyResult<()> {
+    pub fn set_layers(&mut self, _layers: Vec<Py<PyAny>>) -> PyResult<()> {
         Ok(())
     }
 
-    pub fn forward(&mut self, py: Python, inputs: Vec<f64>) -> PyResult<Vec<f64>> {
-        Ok(self.inner.forward(&inputs, false))
+    pub fn forward(&mut self, inputs: Vec<f64>, training: bool) -> Vec<f64> {
+        self.inner.forward(&inputs, training)
     }
 
     pub fn fit(
@@ -57,14 +57,13 @@ impl PyNetwork {
         optimizer_type: String,
         verbose: bool,
     ) -> PyResult<()> {
-
         let n_samples = X.len();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut optimizer: Box<dyn optimizer::Optimizer> = match optimizer_type.as_str() {
             "sgd" => Box::new(optimizer::SGD::new(learning_rate)),
-            "adam" => Box::new(optimizer::Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
-            _ => return Err(pyo3::exceptions::PyValueError::new_err("optimizer must be 'sgd' or 'adam'")),
+            // "adam" => Box::new(optimizer::Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
+            _ => return Err(pyo3::exceptions::PyValueError::new_err("optimizer must be 'sgd'")),
         };
 
         for epoch in 0..epochs {
@@ -72,7 +71,6 @@ impl PyNetwork {
             let mut correct = 0;
 
             let mut indices: Vec<usize> = (0..n_samples).collect();
-            use rand::seq::SliceRandom;
             indices.shuffle(&mut rng);
 
             for start in (0..n_samples).step_by(batch_size) {
@@ -93,8 +91,8 @@ impl PyNetwork {
                     let inputs = &X[idx];
                     let target = y[idx];
 
-                    let outputs: Vec<f64> = self.call_method(py, "forward", (inputs.clone(), true), None)?
-                    .extract()?;
+                    // Direct call – no Python method invocation
+                    let outputs = self.inner.forward(inputs, true);
 
                     let (loss, d_output) = match self.inner.task {
                         Task::Binary => {
@@ -124,11 +122,13 @@ impl PyNetwork {
                     };
                     batch_loss += loss;
 
-                    let mut d_current = d_output;
+                    let mut d_current: Vec<f64> = d_output;   // explicit type
                     let mut layer_idx = self.inner.layers.len();
+                    let num_layers = layer_idx;
+
                     for layer in self.inner.layers.iter_mut().rev() {
                         layer_idx -= 1;
-                        let (d_in, grads) = layer.backward(&mut d_current, layer_idx == self.inner.layers.len() - 1);
+                        let (d_in, grads) = layer.backward(&mut d_current, layer_idx == num_layers - 1);
                         for (neuron_idx, (grad_w, grad_b)) in grads.into_iter().enumerate() {
                             let (acc_w, acc_b) = &mut accum_grads[layer_idx][neuron_idx];
                             for i in 0..acc_w.len() {
@@ -168,8 +168,7 @@ impl PyNetwork {
     pub fn predict(&mut self, py: Python, X: Vec<Vec<f64>>) -> PyResult<Vec<f64>> {
         let mut preds = Vec::new();
         for inputs in X {
-            let outputs: Vec<f64> = self.call_method(py, "forward", (inputs, false), None)?
-            .extract()?;
+            let outputs = self.inner.forward(&inputs, false);   // direct call
             let pred = match self.inner.task {
                 Task::Binary => {
                     let prob = Network::sigmoid(outputs[0]);
@@ -188,12 +187,13 @@ impl PyNetwork {
 
     pub fn predict_proba(&mut self, py: Python, X: Vec<Vec<f64>>) -> PyResult<Vec<Vec<f64>>> {
         if self.inner.task == Task::Regression {
-            return Err(pyo3::exceptions::PyRuntimeError::new_err("predict_proba not supported for regression"));
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                "predict_proba not supported for regression",
+            ));
         }
         let mut probs = Vec::new();
         for inputs in X {
-            let outputs: Vec<f64> = self.call_method(py, "forward", (inputs, false), None)?
-            .extract()?;
+            let outputs = self.inner.forward(&inputs, false);   // direct call
             if self.inner.task == Task::Binary {
                 let p = Network::sigmoid(outputs[0]);
                 probs.push(vec![1.0 - p, p]);
@@ -225,10 +225,17 @@ impl PyNetwork {
     pub fn get_frozen_status(&self) -> Vec<Vec<bool>> {
         self.inner.layers.iter().map(|l| l.get_frozen_mask()).collect()
     }
+
+    pub fn save(&self, _filepath: &str) -> PyResult<()> {
+        unimplemented!()
+    }
+    pub fn load(&mut self, _filepath: &str) -> PyResult<()> {
+        unimplemented!()
+    }
 }
 
 #[pymodule]
-fn deepwise_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn deepwise_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNetwork>()?;
     Ok(())
 }

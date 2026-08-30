@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, RngExt};
 use crate::functional::activation::Activation;
 
 pub struct Neuron {
@@ -6,7 +6,6 @@ pub struct Neuron {
     pub bias: f64,
     pub activation: Activation,
     pub frozen: bool,
-
     // buffer
     last_input: Option<Vec<f64>>,
     last_output: Option<f64>,
@@ -21,9 +20,9 @@ impl Neuron {
             Activation::Relu => (2.0 / n_inputs as f64).sqrt(),
             _ => 0.5,
         };
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let weights: Vec<f64> = (0..n_inputs)
-        .map(|_| rng.gen_range(-limit..=limit))
+        .map(|_| rng.random_range(-limit..=limit))
         .collect();
         Neuron {
             weights,

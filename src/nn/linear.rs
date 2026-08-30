@@ -1,6 +1,8 @@
 use crate::nn::neuron::Neuron;
 use crate::functional::activation::Activation;
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt};
+use rand::rng;
 
 pub struct Linear {
     pub neurons: Vec<Neuron>,
@@ -40,9 +42,9 @@ impl Linear {
 
                    // Dropout
                    if training && self.dropout_rate > 0.0 {
-                       let mut rng = rand::thread_rng();
+                       let mut rng = rand::rng();
                        let active: Vec<usize> = (0..outputs.len())
-                       .filter(|_| rng.gen::<f64>() >= self.dropout_rate)
+                       .filter(|_| rng.random::<f64>() >= self.dropout_rate) // raw identifier
                        .collect();
                        self.mask = Some(active.clone());
                        let scale = 1.0 / (1.0 - self.dropout_rate);
@@ -59,7 +61,7 @@ impl Linear {
                    if training && self.sampling_rate > 0.0 && self.sampling_rate < 1.0 {
                        let keep = ((self.neurons.len() as f64 * (1.0 - self.sampling_rate)).round() as usize).max(1);
                        let mut indices: Vec<usize> = (0..self.neurons.len()).collect();
-                       let mut rng = rand::thread_rng();
+                       let mut rng = rng();
                        indices.shuffle(&mut rng);
                        indices.truncate(keep);
                        self.sampling_mask = Some(indices.clone());
