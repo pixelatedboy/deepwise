@@ -3,6 +3,10 @@ name = "deepwise"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
+pyo3 = "0.29.2"
 rand = "0.10.2"
 rand_distr = "0.6.0"
