@@ -1,7 +1,7 @@
 use rand::Rng;
 
-mod fanctional;
-use crate::fanctional::Activation;
+mod functional;
+use crate::functional::Activation;
 
 pub struct Neuron {
     pub weights: Vec<f64>,
