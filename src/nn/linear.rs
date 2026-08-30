@@ -4,6 +4,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, RngExt};
 use rand::rng;
 
+#[derive(Debug, Clone)]
 pub struct Linear {
     pub neurons: Vec<Neuron>,
     dropout_rate: f64,

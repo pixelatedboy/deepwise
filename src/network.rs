@@ -11,6 +11,7 @@ pub enum Task {
     Regression,
 }
 
+#[derive(Debug, Clone)]
 pub struct Network {
     pub layers: Vec<Linear>,
     pub task: Task,

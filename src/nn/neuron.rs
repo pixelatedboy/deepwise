@@ -1,6 +1,7 @@
 use rand::{Rng, RngExt};
 use crate::functional::activation::Activation;
 
+#[derive(Debug, Clone)]
 pub struct Neuron {
     pub weights: Vec<f64>,
     pub bias: f64,
