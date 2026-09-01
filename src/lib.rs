@@ -5,10 +5,12 @@ mod nn;
 mod optimizer;
 mod norm;
 mod network;
+mod saveload;
 
 use functional::activation::Activation;
 use nn::linear::Linear;
 use network::{Network, Task};
+use saveload::{save, load};
 
 #[pyclass(name = "Linear")]
 pub struct PyLinear {
@@ -308,5 +310,7 @@ impl PyNetwork {
 fn deepwise_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNetwork>()?;
     m.add_class::<PyLinear>()?;
+    m.add_function(wrap_pyfunction!(save, m)?)?;
+    m.add_function(wrap_pyfunction!(load, m)?)?;
     Ok(())
 }
