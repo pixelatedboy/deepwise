@@ -10,6 +10,7 @@ use functional::activation::Activation;
 use nn::linear::Linear;
 use nn::network::{Network, Task};
 use saveload::{save, load};
+use norm::{Normalizer, SimpleNormalizer};
 
 #[pyclass(name = "Linear")]
 pub struct PyLinear {
@@ -305,6 +306,59 @@ impl PyNetwork {
     }
 }
 
+#[pyclass(name = "Normalizer")]
+pub struct PyNormalizer {
+    inner: Normalizer,
+}
+
+#[pymethods]
+impl PyNormalizer {
+    #[new]
+    pub fn new() -> Self {
+        PyNormalizer { inner: Normalizer::new(), }
+    }
+
+    pub fn fit(&mut self, X: Vec<Vec<f64>>, y: Option<Vec<f64>>) {
+        let y_ref = y.as_ref().map(|v| v.as_slice());
+        self.inner.fit(&X, y_ref)
+    }
+
+    pub fn transform_x(&self, X: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        self.inner.transform_x(&X)
+    }
+
+    pub fn transform_y(&self, y: Vec<f64>) -> Vec<f64> {
+        self.inner.transform_y(&y)
+    }
+
+    pub fn inverse_transform_y(&self, y_norm: Vec<f64>) -> Vec<f64> {
+        self.inner.inverse_transform_y(&y_norm)
+    }
+}
+
+#[pyclass(name = "SimpleNormalizer")]
+pub struct PySimpleNormalizer {
+    inner: SimpleNormalizer,
+}
+
+#[pymethods]
+impl PySimpleNormalizer {
+    #[new]
+    pub fn new() -> Self {
+        PySimpleNormalizer {
+            inner: SimpleNormalizer::new(),
+        }
+    }
+
+    pub fn fit(&mut self, X: Vec<Vec<f64>>) {
+        self.inner.fit(&X);
+    }
+
+    pub fn transform_x(&self, X: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        self.inner.transform_x(&X)
+    }
+}
+
 #[pymodule]
 fn deepwise_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let nn_mod = PyModule::new(m.py(), "nn")?;
@@ -312,6 +366,12 @@ fn deepwise_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     nn_mod.add_class::<PyLinear>()?;
 
     m.add_submodule(&nn_mod)?;
+
+    let norm_mod = PyModule::new(m.py(), "norm")?;
+    norm_mod.add_class::<PyNormalizer>()?;
+    norm_mod.add_class::<PySimpleNormalizer>()?;
+
+    m.add_submodule(&norm_mod);
 
     m.add_function(wrap_pyfunction!(save, m)?)?;
     m.add_function(wrap_pyfunction!(load, m)?)?;
