@@ -125,9 +125,6 @@ impl PyNetwork {
         Ok(())
     }
 
-    // BUG FIX: the original body built `rust_layers` but never pushed
-    // anything into it, and never assigned it back to `self.inner.layers`.
-    // As written, calling `set_layers(...)` from Python silently did nothing.
     pub fn set_layers(&mut self, layers: Vec<Py<PyLinear>>, py: Python) -> PyResult<()> {
         let mut rust_layers = Vec::with_capacity(layers.len());
         for py_layer in &layers {
@@ -142,10 +139,6 @@ impl PyNetwork {
         self.inner.forward(&inputs, training)
     }
 
-    // Exposes the layer-by-layer backward pass so a custom training loop can
-    // get per-neuron gradients back (one Vec<(grad_weights, grad_bias)> per
-    // layer, in layer order) and then hand them to a PyOptimizer itself,
-    // instead of being forced through `fit(...)`.
     pub fn backward(&mut self, d_outputs: Vec<f64>) -> (Vec<f64>, Vec<Vec<(Vec<f64>, f64)>>) {
         let mut d = d_outputs;
         self.inner.backward(&mut d)
@@ -165,12 +158,6 @@ impl PyNetwork {
         Network::softmax(&logits)
     }
 
-    // NOTE: `self.into_py(py)` + `this.call_method(py, "forward", ...)` was
-    // a round-trip through Python just to call a method that already exists
-    // on `self.inner`. That pattern also relied on `IntoPy::into_py`, which
-    // was removed in recent pyo3 versions. Calling `self.inner.forward(...)`
-    // directly is simpler, faster (no Python call overhead per sample), and
-    // has no pyo3-version dependency.
     pub fn fit(
         &mut self,
         X: Vec<Vec<f64>>,
