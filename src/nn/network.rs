@@ -1,5 +1,5 @@
 use crate::nn::linear::Linear;
-use crate::optimizer::{Optimizer, SGD};
+use crate::optimizer::{Optimizer, SGD, Adam};
 use crate::functional::activation::Activation;
 use rand::seq::SliceRandom;
 use rand::rng;
@@ -78,7 +78,7 @@ impl Network {
                ) {
                    let mut optimizer: Box<dyn Optimizer> = match optimizer_type {
                        "sgd" => Box::new(SGD::new(learning_rate)),
-                       // "adam" => Box::new(Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
+                       "adam" => Box::new(Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
                        _ => panic!("Unsupported optimizer"),
                    };
                    let n_samples = X.len();

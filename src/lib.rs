@@ -134,7 +134,7 @@ impl PyNetwork {
 
         let mut optimizer: Box<dyn optimizer::Optimizer> = match optimizer_type.as_str() {
             "sgd" => Box::new(optimizer::SGD::new(learning_rate)),
-            // "adam" => Box::new(optimizer::Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
+            "adam" => Box::new(optimizer::Adam::new(learning_rate, 0.9, 0.999, 1e-8)),
             _ => return Err(pyo3::exceptions::PyValueError::new_err("optimizer must be 'sgd'")),
         };
 
@@ -229,8 +229,12 @@ impl PyNetwork {
 
             if verbose && (epoch % 10 == 0 || epoch == epochs - 1) {
                 let avg_loss = total_loss / n_samples as f64;
-                let accuracy = correct as f64 / n_samples as f64;
-                println!("Epoch {}, Loss: {:.6}, Accuracy: {:.4}", epoch, avg_loss, accuracy);
+                if self.inner.task == Task::Regression {
+                    println!("Epoch {}, Loss: {:.6}", epoch, avg_loss);
+                } else {
+                    let accuracy = correct as f64 / n_samples as f64;
+                    println!("Epoch {}, Loss: {:.6}, Accuracy: {:.4}", epoch, avg_loss, accuracy);
+                }
             }
         }
 

@@ -6,3 +6,6 @@ pub trait Optimizer {
 
 pub mod sgd;
 pub use sgd::SGD;
+
+pub mod adam;
+pub use adam::Adam;
