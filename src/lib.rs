@@ -67,6 +67,35 @@ impl PyLinear {
     pub fn num_neurons(&self) -> usize {
         self.inner.neurons.len()
     }
+
+    pub fn get_weights(&self, neuron_idx: usize) -> PyResult<Vec<f64>> {
+        self.inner.neurons.get(neuron_idx)
+        .map(|n| n.weights.clone())
+        .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("neuron_idx out of range"))
+    }
+
+    pub fn set_weights(&mut self, neuron_idx: usize, weights: Vec<f64>) -> PyResult<()> {
+        let neuron = self.inner.neurons.get_mut(neuron_idx)
+        .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("neuron_idx out of range"))?;
+        if weights.len() != neuron.weights.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err("weights length does not match neuron's input size"));
+        }
+        neuron.weights = weights;
+        Ok(())
+    }
+
+    pub fn get_bias(&self, neuron_idx: usize) -> PyResult<f64> {
+        self.inner.neurons.get(neuron_idx)
+        .map(|n| n.bias)
+        .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("neuron_idx out of range"))
+    }
+
+    pub fn set_bias(&mut self, neuron_idx: usize, bias: f64) -> PyResult<()> {
+        let neuron = self.inner.neurons.get_mut(neuron_idx)
+        .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("neuron_idx out of range"))?;
+        neuron.bias = bias;
+        Ok(())
+    }
 }
 
 #[pyclass(name = "Network", subclass)]
@@ -111,6 +140,29 @@ impl PyNetwork {
 
     pub fn forward(&mut self, inputs: Vec<f64>, training: bool) -> Vec<f64> {
         self.inner.forward(&inputs, training)
+    }
+
+    // Exposes the layer-by-layer backward pass so a custom training loop can
+    // get per-neuron gradients back (one Vec<(grad_weights, grad_bias)> per
+    // layer, in layer order) and then hand them to a PyOptimizer itself,
+    // instead of being forced through `fit(...)`.
+    pub fn backward(&mut self, d_outputs: Vec<f64>) -> (Vec<f64>, Vec<Vec<(Vec<f64>, f64)>>) {
+        let mut d = d_outputs;
+        self.inner.backward(&mut d)
+    }
+
+    pub fn num_layers(&self) -> usize {
+        self.inner.layers.len()
+    }
+
+    #[staticmethod]
+    pub fn sigmoid(x: f64) -> f64 {
+        Network::sigmoid(x)
+    }
+
+    #[staticmethod]
+    pub fn softmax(logits: Vec<f64>) -> Vec<f64> {
+        Network::softmax(&logits)
     }
 
     // NOTE: `self.into_py(py)` + `this.call_method(py, "forward", ...)` was
@@ -310,6 +362,87 @@ impl PyNetwork {
     }
 }
 
+#[pyclass(name = "Optimizer")]
+pub struct PyOptimizer {
+    inner: Box<dyn optimizer::Optimizer + Send + Sync>,
+}
+
+#[pymethods]
+impl PyOptimizer {
+    #[staticmethod]
+    pub fn sgd(learning_rate: f64) -> Self {
+        PyOptimizer { inner: Box::new(optimizer::SGD::new(learning_rate)) }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8))]
+    pub fn adam(learning_rate: f64, beta1: f64, beta2: f64, epsilon: f64) -> Self {
+        PyOptimizer { inner: Box::new(optimizer::Adam::new(learning_rate, beta1, beta2, epsilon)) }
+    }
+
+    pub fn update_neuron(
+        &mut self,
+        layer: &mut PyLinear,
+        neuron_idx: usize,
+        grad_weights: Vec<f64>,
+        grad_bias: f64,
+        neuron_id: &str,
+    ) -> PyResult<()> {
+        let neuron = layer.inner.neurons.get_mut(neuron_idx)
+        .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err("neuron_idx out of range"))?;
+        self.inner.update(neuron, &grad_weights, grad_bias, neuron_id);
+        Ok(())
+    }
+
+    pub fn update_layer(
+        &mut self,
+        layer: &mut PyLinear,
+        grads: Vec<(Vec<f64>, f64)>,
+                        layer_id: &str,
+    ) -> PyResult<()> {
+        if grads.len() != layer.inner.neurons.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "grads length does not match number of neurons in the layer",
+            ));
+        }
+        for (neuron_idx, (grad_w, grad_b)) in grads.into_iter().enumerate() {
+            let neuron = &mut layer.inner.neurons[neuron_idx];
+            if neuron.frozen { continue; }
+            let id = format!("{}_neuron_{}", layer_id, neuron_idx);
+            self.inner.update(neuron, &grad_w, grad_b, &id);
+        }
+        Ok(())
+    }
+
+    pub fn update_network(
+        &mut self,
+        network: &mut PyNetwork,
+        grads: Vec<Vec<(Vec<f64>, f64)>>,
+                          network_id: &str,
+    ) -> PyResult<()> {
+        if grads.len() != network.inner.layers.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "grads length does not match number of layers in the network",
+            ));
+        }
+        for (layer_idx, layer_grads) in grads.into_iter().enumerate() {
+            let layer = &mut network.inner.layers[layer_idx];
+            if layer_grads.len() != layer.neurons.len() {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "grads for layer {} do not match its number of neurons", layer_idx
+                )));
+            }
+            for (neuron_idx, (grad_w, grad_b)) in layer_grads.into_iter().enumerate() {
+                let neuron = &mut layer.neurons[neuron_idx];
+                if neuron.frozen { continue; }
+                let id = format!("{}_layer_{}_neuron_{}", network_id, layer_idx, neuron_idx);
+                self.inner.update(neuron, &grad_w, grad_b, &id);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[pyclass(name = "Normalizer")]
 pub struct PyNormalizer {
     inner: Normalizer,
@@ -364,10 +497,11 @@ impl PySimpleNormalizer {
 }
 
 #[pymodule]
-fn deepwise_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn deepwise(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let nn_mod = PyModule::new(m.py(), "nn")?;
     nn_mod.add_class::<PyNetwork>()?;
     nn_mod.add_class::<PyLinear>()?;
+    nn_mod.add_class::<PyOptimizer>()?;
 
     m.add_submodule(&nn_mod)?;
 
