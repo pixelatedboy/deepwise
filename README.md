@@ -12,7 +12,7 @@ Deepwise is a lightweight neural network library written in Rust with Python bin
 - Regularization: Dropout and neuron sampling for better generalization
 - Neuron Freezing: Freeze specific neurons or entire layers for transfer learning
 - Multiple Tasks: Binary classification, multi-class classification, and regression
-- Serialization: Save and load trained models (coming soon)
+- Serialization: Save and load trained models
 
 ## Usage
 
