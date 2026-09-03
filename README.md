@@ -32,10 +32,7 @@ export PYTHONPATH=$(pwd)/target/release:$PYTHONPATH
 ### Using Maturin (Recommended)
 
 ```bash
-pip install maturin
-
-maturin build
-pip install target/wheels/*.whl
+pip install .
 ```
 
 ## Docs
